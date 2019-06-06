@@ -27,16 +27,24 @@ class OptimalStatistic(object):
 
     """
 
-    def __init__(self, psrs, bayesephem=True, gamma_common=4.33, orf='hd'):
+    def __init__(self, psrs, bayesephem=True, gamma_common=4.33, orf='hd',
+                 wideband=False, select=None, noisedict=None, pta=None):
 
         # initialize standard model with fixed white noise and
         # and powerlaw red and gw signal
-        self.pta = models.model_2a(psrs, psd='powerlaw', bayesephem=bayesephem,
-                                   gamma_common=gamma_common)
+
+        if pta is None:
+            self.pta = models.model_2a(psrs, psd='powerlaw',
+                                       bayesephem=bayesephem,
+                                       gamma_common=gamma_common,
+                                       wideband=wideband,
+                                       select=select, noisedict=noisedict)
+        else:
+            self.pta = pta
 
 
         # get frequencies here
-        self.freqs = self._get_freqs()
+        self.freqs = self._get_freqs(psrs)
 
         # get F-matrices and set up cache
         self.Fmats = self.get_Fmats()
@@ -55,7 +63,7 @@ class OptimalStatistic(object):
         else:
             raise ValueError('Unknown ORF!')
 
-    def compute_os(self, params={}):
+    def compute_os(self, params=None):
         """
         Computes the optimal statistic values given an
         `enterprise` parameter dictionary.
@@ -73,6 +81,10 @@ class OptimalStatistic(object):
 
         """
 
+        if params is None:
+            params = {name: par.sample() for name, par
+                      in zip(self.pta.param_names, self.pta.params)}
+
         # get matrix products
         TNrs = self.get_TNr(params=params)
         TNTs = self.get_TNT(params=params)
@@ -84,7 +96,7 @@ class OptimalStatistic(object):
 
         X, Z = [], []
         for TNr, TNT, FNr, FNF, FNT, phiinv in zip(TNrs, TNTs, FNrs, FNFs, FNTs, phiinvs):
-            Sigma = TNT + np.diag(phiinv)
+            Sigma = TNT + (np.diag(phiinv) if phiinv.ndim == 1 else phiinv)
 
             cf = sl.cho_factor(Sigma)
             SigmaTNr = sl.cho_solve(cf, TNr)
@@ -178,12 +190,12 @@ class OptimalStatistic(object):
 
         return Fmats
 
-    def _get_freqs(self):
+    def _get_freqs(self,psrs):
         """ Hackish way to get frequency vector."""
         for sig in self.pta._signalcollections[0]._signals:
             if sig.signal_name == 'red noise':
                 sig._construct_basis()
-                freqs = np.array(sig._labels.values()[0])
+                freqs = np.array(sig._labels[''])
                 break
         return freqs
 
